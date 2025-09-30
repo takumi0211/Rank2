@@ -280,36 +280,23 @@ const words = [
 ];
 
 // ============ 設定・状態管理 ============
-const SETTINGS_KEY = 'eq_settings_v1';
-const STATS_KEY = 'eq_stats_v1';
 const MISSED_BANK_KEY = 'eq_missed_bank_v1';
 const STAR_KEY = 'eq_star_v1';
-
-const DEFAULT_SETTINGS = {
-    timePerQuestion: 5000,
-    sound: true,
-    theme: 'light',
-    dailyGoal: 30,
-};
+const QUIZ_TIME_LIMIT_MS = 5000;
+const SOUND_ENABLED = false;
 
 const storage = {
     get(key, fallback) {
         try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; }
     },
-    set(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
+    set(key, value) {
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+        } catch (error) {
+            console.warn(`Failed to persist ${key}`, error);
+        }
+    }
 };
-
-let SETTINGS = { ...DEFAULT_SETTINGS, ...storage.get(SETTINGS_KEY, {}) };
-SETTINGS.theme = 'light';
-try { storage.set(SETTINGS_KEY, SETTINGS); } catch {}
-let STATS = storage.get(STATS_KEY, {
-    streak: 0,
-    lastActive: null,
-    dailyCount: 0,
-    totalCorrect: 0,
-    totalQuestions: 0,
-    dailyGoal: DEFAULT_SETTINGS.dailyGoal,
-});
 let STARRED = storage.get(STAR_KEY, {}); // { id: true }
 let MISSED_BANK = storage.get(MISSED_BANK_KEY, []); // [{word, meaning}]
 
@@ -317,6 +304,7 @@ let MISSED_BANK = storage.get(MISSED_BANK_KEY, []); // [{word, meaning}]
 let currentWordIndex = 0;
 let score = 0;
 let shuffledWords = [];
+let currentWordList = [];
 let missedWords = []; // セッションで間違えた単語
 let selectedWordCount = 0;
 let timer = null;
@@ -336,6 +324,44 @@ function getRandomChoices(correctMeaning) {
 
 function wordId(entry) { return `${entry.word}｜${entry.meaning}`; }
 
+function reportError(error, context='') {
+    console.error(context || 'Unexpected error', error);
+    const container = document.getElementById('quiz-container');
+    if (container) {
+        container.innerHTML = `
+            <div class="error-state">
+                <h2>エラーが発生しました</h2>
+                <p>${context || '処理を完了できませんでした。'}<br>ページを再読み込みしてください。</p>
+            </div>
+        `;
+    }
+}
+
+function setActiveNav(mode) {
+    document.querySelectorAll('.header-link').forEach(link => {
+        const isActive = link.dataset.nav === mode;
+        link.classList.toggle('is-active', isActive);
+        link.setAttribute('aria-current', isActive ? 'page' : 'false');
+    });
+    const title = document.getElementById('nav-home');
+    if (title) {
+        const isHome = mode === 'home';
+        title.classList.toggle('is-active', isHome);
+        title.setAttribute('aria-current', isHome ? 'page' : 'false');
+    }
+}
+
+function createToolButton(label, handler) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tool-btn';
+    btn.textContent = label;
+    if (handler) {
+        btn.addEventListener('click', handler);
+    }
+    return btn;
+}
+
 function shuffleWords() {
     const allWords = shuffleArray(words);
     if (selectedWordCount > 0) {
@@ -349,37 +375,11 @@ function applyTheme() {
     document.documentElement.setAttribute('data-theme', 'light');
 }
 
-function ensureDaily() {
-    const today = new Date();
-    const ymd = `${today.getFullYear()}-${today.getMonth()+1}-${today.getDate()}`;
-    if (STATS.lastActive !== ymd) {
-        if (STATS.lastActive) {
-            const prev = new Date(STATS.lastActive);
-            const diff = Math.floor((today - prev) / 86400000);
-            STATS.streak = diff === 1 ? (STATS.streak + 1) : (diff === 0 ? STATS.streak : 0);
-        }
-        STATS.lastActive = ymd;
-        STATS.dailyCount = 0;
-        storage.set(STATS_KEY, STATS);
-    }
-}
-
-function updateStatsBar() {
-    ensureDaily();
-    const acc = STATS.totalQuestions ? Math.round((STATS.totalCorrect / STATS.totalQuestions) * 100) : 0;
-    const streak = document.getElementById('stat-streak');
-    const goal = document.getElementById('stat-goal');
-    const accEl = document.getElementById('stat-acc');
-    if (streak) streak.textContent = `🔥 ${STATS.streak}`;
-    if (goal) goal.textContent = `🎯 ${STATS.dailyCount}/${STATS.dailyGoal || DEFAULT_SETTINGS.dailyGoal}`;
-    if (accEl) accEl.textContent = `✅ ${acc}%`;
-}
-
 function vibrate(ms=20){ try{ if (navigator.vibrate) navigator.vibrate(ms); }catch{} }
 
 let audioCtx = null;
 function beep(freq=880, time=0.08, type='sine'){
-    if (!SETTINGS.sound) return;
+    if (!SOUND_ENABLED) return;
     try {
         audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
         const o = audioCtx.createOscillator();
@@ -393,244 +393,210 @@ function beep(freq=880, time=0.08, type='sine'){
 }
 
 function displayWord() {
-    const currentWord = shuffledWords[currentWordIndex];
-    document.getElementById('word').textContent = currentWord.word;
-    document.getElementById('question-count').textContent = 
-        `問題: ${currentWordIndex + 1}/${shuffledWords.length}`;
-    document.getElementById('score').textContent = `スコア: ${score}`;
-    
-    // ツール群（ホーム・スター）更新
-    const tools = document.getElementById('word-tools');
-    if (tools) {
-        tools.innerHTML = '';
-        const homeBtn = document.createElement('button');
-        homeBtn.className = 'tool-btn';
-        homeBtn.textContent = '🏠 ホーム';
-        homeBtn.addEventListener('click', showHomeScreen);
-        const starBtn = document.createElement('button');
-        starBtn.className = 'tool-btn';
-        starBtn.id = 'btn-star';
-        const id = wordId(currentWord);
-        const starred = !!STARRED[id];
-        if (starred) starBtn.classList.add('is-starred');
-        starBtn.textContent = starred ? '★ スター済' : '☆ スター';
-        starBtn.addEventListener('click', () => {
-            const now = !!STARRED[id];
-            if (now) { delete STARRED[id]; } else { STARRED[id] = true; }
-            storage.set(STAR_KEY, STARRED);
-            displayWord();
+    try {
+        const currentWord = shuffledWords[currentWordIndex];
+        if (!currentWord) throw new Error('currentWord is undefined');
+        document.getElementById('word').textContent = currentWord.word;
+        document.getElementById('question-count').textContent = 
+            `問題: ${currentWordIndex + 1}/${shuffledWords.length}`;
+        document.getElementById('score').textContent = `スコア: ${score}`;
+        
+        // ツール群（ホーム・スター）更新
+        const tools = document.getElementById('word-tools');
+        if (tools) {
+            tools.innerHTML = '';
+            const id = wordId(currentWord);
+            const starred = !!STARRED[id];
+            const homeBtn = createToolButton('ホームに戻る', showHomeScreen);
+            const flashBtn = createToolButton('フラッシュカードで確認', () => {
+                const baseList = currentWordList.length ? currentWordList.slice() : shuffledWords.slice();
+                startFlashcards({ list: baseList, source: 'current', shuffle: false });
+            });
+            const starBtn = createToolButton(starred ? 'スター済' : 'スター登録', () => {
+                const now = !!STARRED[id];
+                if (now) { delete STARRED[id]; } else { STARRED[id] = true; }
+                try { storage.set(STAR_KEY, STARRED); } catch (error) { console.warn('スター情報の保存に失敗しました', error); }
+                displayWord();
+            });
+            starBtn.id = 'btn-star';
+            if (starred) starBtn.classList.add('is-starred');
+            tools.append(homeBtn, flashBtn, starBtn);
+        }
+        
+        // 既存のタイムバーを削除
+        const existingTimerBar = document.querySelector('.timer-bar-container');
+        if (existingTimerBar) {
+            existingTimerBar.remove();
+        }
+        
+        const choices = getRandomChoices(currentWord.meaning);
+        const choicesContainer = document.getElementById('choices');
+        if (!choicesContainer) throw new Error('choices container not found');
+        choicesContainer.innerHTML = '';
+        
+        // 新しいタイムバーを追加
+        const timerBarHTML = `
+            <div class="timer-bar-container">
+                <div class="timer-bar" id="timer-bar"></div>
+            </div>
+        `;
+        choicesContainer.insertAdjacentHTML('beforebegin', timerBarHTML);
+        
+        choices.forEach(choice => {
+            const button = document.createElement('button');
+            button.className = 'choice-btn';
+            button.textContent = choice;
+            button.addEventListener('click', () => checkAnswer(choice, button));
+            choicesContainer.appendChild(button);
         });
-        tools.append(homeBtn, starBtn);
-    }
-    
-    // 既存のタイムバーを削除
-    const existingTimerBar = document.querySelector('.timer-bar-container');
-    if (existingTimerBar) {
-        existingTimerBar.remove();
-    }
-    
-    const choices = getRandomChoices(currentWord.meaning);
-    const choicesContainer = document.getElementById('choices');
-    choicesContainer.innerHTML = '';
-    
-    // 新しいタイムバーを追加
-    const timerBarHTML = `
-        <div class="timer-bar-container">
-            <div class="timer-bar" id="timer-bar"></div>
-        </div>
-    `;
-    choicesContainer.insertAdjacentHTML('beforebegin', timerBarHTML);
-    
-    choices.forEach((choice, index) => {
-        const button = document.createElement('button');
-        button.className = 'choice-btn';
-        button.textContent = choice;
-        button.addEventListener('click', () => checkAnswer(choice, button));
-        choicesContainer.appendChild(button);
-    });
 
-    document.getElementById('result').textContent = '';
-    
-    startTimer();
+        const result = document.getElementById('result');
+        if (result) result.textContent = '';
+        
+        startTimer();
+    } catch (error) {
+        reportError(error, '問題の表示に失敗しました。');
+    }
 }
 
 function showResults() {
-    const container = document.querySelector('.quiz-container');
-    const accuracy = Math.round((score / shuffledWords.length) * 100);
+    try {
+        const container = document.querySelector('.quiz-container');
+        if (!container) throw new Error('結果表示用のコンテナが見つかりません');
+        const accuracy = shuffledWords.length ? Math.round((score / shuffledWords.length) * 100) : 0;
 
-    // 一旦HTMLを更新
-    container.innerHTML = `
-        <h2>テスト結果</h2>
-        <div class="result-summary">
-            <p>スコア: ${score}/${shuffledWords.length} (${accuracy}%)</p>
-        </div>
-        ${missedWords.length > 0 ? `
-            <div class="missed-words">
-                <h3>間違えた単語</h3>
-                <div class="missed-words-list">
-                    ${missedWords.map(word => `
-                        <div class="missed-word-item">
-                            <span class="word">${word.word}</span>
-                            <span class="meaning">${word.meaning}</span>
+        container.innerHTML = `
+            <h2>テスト結果</h2>
+            <div class="result-summary">
+                <p>スコア: ${score}/${shuffledWords.length} (${accuracy}%)</p>
+            </div>
+            ${missedWords.length > 0 ? `
+                <div class="missed-words">
+                    <h3>間違えた単語</h3>
+                    <div class="missed-words-list">
+                        ${missedWords.map(word => `
+                            <div class="missed-word-item">
+                                <span class="word">${word.word}</span>
+                                <span class="meaning">${word.meaning}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <button id="retry-missed" class="retry-btn">
+                        間違えた単語でもう一度テストする
+                    </button>
+                </div>
+            ` : `
+                <div class="perfect-score">
+                    <p>完璧です！全問正解おめでとうございます！</p>
+                </div>
+            `}
+            <button id="retry-all" class="retry-btn">最初からやり直す</button>
+            <button id="btn-results-flash" class="retry-btn">フラッシュカードで確認する</button>
+            <button id="go-review" class="retry-btn">復習モードへ</button>
+            <button id="results-home" class="retry-btn">ホームへ戻る</button>
+        `;
+
+        setActiveNav('quiz');
+
+        const retryMissedBtn = document.getElementById('retry-missed');
+        if (retryMissedBtn) {
+            retryMissedBtn.addEventListener('click', () => {
+                try {
+                    const retryList = shuffleArray([...missedWords]);
+                    container.innerHTML = `
+                        <div class="word-display">
+                            <p id="word"></p>
                         </div>
-                    `).join('')}
-                </div>
-                <button id="retry-missed" class="retry-btn">
-                    間違えた単語でもう一度テストする
-                </button>
-            </div>
-        ` : `
-            <div class="perfect-score">
-                <p>完璧です！全問正解おめでとうございます！</p>
-            </div>
-        `}
-        <button id="retry-all" class="retry-btn">最初からやり直す</button>
-        <button id="go-review" class="retry-btn">復習モードへ</button>
-        <button id="results-home" class="retry-btn">ホームへ戻る</button>
-    `;
+                        <div class="choices-container" id="choices">
+                        </div>
+                        <div class="result" id="result"></div>
+                        <div class="progress">
+                            <span id="score">スコア: 0</span>
+                            <span id="question-count">問題: 0/0</span>
+                        </div>
+                    `;
 
-    // HTMLの更新後にイベントリスナーを設定
-    const retryMissedBtn = document.getElementById('retry-missed');
-    if (retryMissedBtn) {
-        retryMissedBtn.addEventListener('click', () => {
-            // quiz-containerを元の状態に戻す
-            container.innerHTML = `
-                <div class="word-display">
-                    <p id="word"></p>
-                </div>
-                <div class="choices-container" id="choices">
-                </div>
-                <div class="result" id="result"></div>
-                <div class="progress">
-                    <span id="score">スコア: 0</span>
-                    <span id="question-count">問題: 0/0</span>
-                </div>
-            `;
-            
-            shuffledWords = shuffleArray([...missedWords]);
-            missedWords = [];
-            currentWordIndex = 0;
-            score = 0;
-            displayWord();
+                    shuffledWords = retryList.slice();
+                    currentWordList = retryList.slice();
+                    selectedWordCount = retryList.length;
+                    missedWords = [];
+                    currentWordIndex = 0;
+                    score = 0;
+                    setActiveNav('quiz');
+                    displayWord();
+                } catch (error) {
+                    reportError(error, '間違えた単語での再挑戦に失敗しました。');
+                }
+            });
+        }
+
+        document.getElementById('retry-all')?.addEventListener('click', () => {
+            showHomeScreen();
         });
-    }
 
-    const retryAllBtn = document.getElementById('retry-all');
-    if (retryAllBtn) {
-        retryAllBtn.addEventListener('click', () => {
-            showHomeScreen(); // 最初からやり直すときはホーム画面に戻る
+        document.getElementById('go-review')?.addEventListener('click', () => {
+            showReviewHub();
         });
-    }
 
-    const goReviewBtn = document.getElementById('go-review');
-    if (goReviewBtn) {
-        goReviewBtn.addEventListener('click', () => showReviewHub());
-    }
+        const flashResultsBtn = document.getElementById('btn-results-flash');
+        if (flashResultsBtn) {
+            flashResultsBtn.addEventListener('click', () => {
+                const base = missedWords.length ? missedWords : currentWordList;
+                if (!base.length) {
+                    showHomeScreen();
+                    return;
+                }
+                startFlashcards({ list: base.slice(), source: 'results', shuffle: false });
+            });
+        }
 
-    document.getElementById('results-home')?.addEventListener('click', showHomeScreen);
+        document.getElementById('results-home')?.addEventListener('click', showHomeScreen);
+    } catch (error) {
+        reportError(error, 'テスト結果の表示に失敗しました。');
+    }
 }
 
 function checkAnswer(selectedAnswer, selectedButton) {
-    // タイマーとタイマー関連の要素をクリア
-    clearTimeout(timer);
-    const timerBar = document.getElementById('timer-bar');
-    if (timerBar) {
-        timerBar.style.transition = 'none';
-        timerBar.style.width = '0';
-    }
-    
-    const correctAnswer = shuffledWords[currentWordIndex].meaning;
-    const allButtons = document.querySelectorAll('.choice-btn');
-    
-    allButtons.forEach(button => {
-        button.disabled = true;
-        if (button.textContent === correctAnswer) {
-            button.classList.add('correct');
-        }
-    });
-
-    if (selectedAnswer === correctAnswer) {
-        document.getElementById('result').textContent = '正解！';
-        document.getElementById('result').className = 'result correct';
-        score++;
-        STATS.totalCorrect++;
-        beep(1040, 0.06, 'sine');
-        vibrate(10);
-    } else {
-        selectedButton.classList.add('incorrect');
-        document.getElementById('result').textContent = '不正解...';
-        document.getElementById('result').className = 'result incorrect';
-        missedWords.push(shuffledWords[currentWordIndex]);
-        MISSED_BANK.push(shuffledWords[currentWordIndex]);
-        storage.set(MISSED_BANK_KEY, MISSED_BANK.slice(-500)); // 最大500件保持
-        beep(220, 0.1, 'square');
-        vibrate(20);
-    }
-    
-    document.getElementById('score').textContent = `スコア: ${score}`;
-    STATS.totalQuestions++;
-    STATS.dailyCount++;
-    storage.set(STATS_KEY, STATS);
-    updateStatsBar();
-    
-    setTimeout(() => {
-        currentWordIndex++;
-        if (currentWordIndex >= shuffledWords.length) {
-            showResults();
-        } else {
-            displayWord();
-        }
-    }, 1000);
-}
-
-function startTimer() {
-    const timerBar = document.getElementById('timer-bar');
-    if (!timerBar) return;
-    
-    timerBar.classList.remove('warning', 'danger');
-    const LIMIT = SETTINGS.timePerQuestion || DEFAULT_SETTINGS.timePerQuestion;
-    timerBar.style.transition = `width ${LIMIT}ms linear`;
-    timerBar.style.width = '100%';
-    
-    if (timer) {
+    try {
         clearTimeout(timer);
-    }
-    
-    setTimeout(() => {
-        if (timerBar) timerBar.style.width = '0%';
-    }, 50);
+        const timerBar = document.getElementById('timer-bar');
+        if (timerBar) {
+            timerBar.style.transition = 'none';
+            timerBar.style.width = '0';
+        }
 
-    setTimeout(() => {
-        if (timerBar) timerBar.classList.add('warning');
-    }, LIMIT * 0.6);
-    
-    setTimeout(() => {
-        if (timerBar) timerBar.classList.add('danger');
-    }, LIMIT * 0.8);
-
-    timer = setTimeout(() => {
-        const correctAnswer = shuffledWords[currentWordIndex].meaning;
+        const current = shuffledWords[currentWordIndex];
+        if (!current) throw new Error('回答対象の単語が見つかりません');
+        const correctAnswer = current.meaning;
         const allButtons = document.querySelectorAll('.choice-btn');
-        
-        // 時間切れの場合、すべてのボタンを無効化し、正解を赤色で表示
+
         allButtons.forEach(button => {
             button.disabled = true;
             if (button.textContent === correctAnswer) {
-                button.classList.add('incorrect'); // 正解を赤色で表示
+                button.classList.add('correct');
             }
         });
 
-        document.getElementById('result').textContent = '時間切れ...';
-        document.getElementById('result').className = 'result incorrect';
-        missedWords.push(shuffledWords[currentWordIndex]);
-        MISSED_BANK.push(shuffledWords[currentWordIndex]);
-        storage.set(MISSED_BANK_KEY, MISSED_BANK.slice(-500));
-        beep(180, 0.12, 'triangle');
-        vibrate(30);
-        STATS.totalQuestions++;
-        STATS.dailyCount++;
-        storage.set(STATS_KEY, STATS);
-        updateStatsBar();
+        if (selectedAnswer === correctAnswer) {
+            document.getElementById('result').textContent = '正解！';
+            document.getElementById('result').className = 'result correct';
+            score++;
+            beep(1040, 0.06, 'sine');
+            vibrate(10);
+        } else {
+            if (selectedButton) selectedButton.classList.add('incorrect');
+            document.getElementById('result').textContent = '不正解...';
+            document.getElementById('result').className = 'result incorrect';
+            missedWords.push(current);
+            MISSED_BANK.push(current);
+            try { storage.set(MISSED_BANK_KEY, MISSED_BANK.slice(-500)); } catch (error) {
+                console.warn('Failed to save missed bank', error);
+            }
+            beep(220, 0.1, 'square');
+            vibrate(20);
+        }
+
+        document.getElementById('score').textContent = `スコア: ${score}`;
 
         setTimeout(() => {
             currentWordIndex++;
@@ -640,229 +606,382 @@ function startTimer() {
                 displayWord();
             }
         }, 1000);
-    }, LIMIT);
+    } catch (error) {
+        reportError(error, '回答処理中にエラーが発生しました。');
+    }
+}
+
+function startTimer() {
+    try {
+        const timerBar = document.getElementById('timer-bar');
+        if (!timerBar) return;
+
+        timerBar.classList.remove('warning', 'danger');
+        const LIMIT = QUIZ_TIME_LIMIT_MS;
+        timerBar.style.transition = `width ${LIMIT}ms linear`;
+        timerBar.style.width = '100%';
+
+        if (timer) {
+            clearTimeout(timer);
+        }
+
+        setTimeout(() => {
+            if (timerBar) timerBar.style.width = '0%';
+        }, 50);
+
+        setTimeout(() => {
+            if (timerBar) timerBar.classList.add('warning');
+        }, LIMIT * 0.6);
+        
+        setTimeout(() => {
+            if (timerBar) timerBar.classList.add('danger');
+        }, LIMIT * 0.8);
+
+        timer = setTimeout(() => {
+            try {
+                const current = shuffledWords[currentWordIndex];
+                if (!current) throw new Error('タイマー終了時の単語が取得できません');
+                const correctAnswer = current.meaning;
+                const allButtons = document.querySelectorAll('.choice-btn');
+
+                allButtons.forEach(button => {
+                    button.disabled = true;
+                    if (button.textContent === correctAnswer) {
+                        button.classList.add('incorrect');
+                    }
+                });
+
+                const result = document.getElementById('result');
+                if (result) {
+                    result.textContent = '時間切れ...';
+                    result.className = 'result incorrect';
+                }
+                missedWords.push(current);
+                MISSED_BANK.push(current);
+                try { storage.set(MISSED_BANK_KEY, MISSED_BANK.slice(-500)); } catch (error) {
+                    console.warn('Failed to persist missed bank after timeout', error);
+                }
+                beep(180, 0.12, 'triangle');
+                vibrate(30);
+
+                setTimeout(() => {
+                    currentWordIndex++;
+                    if (currentWordIndex >= shuffledWords.length) {
+                        showResults();
+                    } else {
+                        displayWord();
+                    }
+                }, 1000);
+            } catch (error) {
+                reportError(error, 'タイマー処理中にエラーが発生しました。');
+            }
+        }, LIMIT);
+    } catch (error) {
+        reportError(error, 'タイマーの開始に失敗しました。');
+    }
 }
 
 // ======= 画面: ホーム =======
 function showHomeScreen() {
-    const container = document.getElementById('quiz-container');
-    container.innerHTML = `
-        <div class="home-screen">
-            <h2>単語学習をはじめよう</h2>
-            <div class="word-count-options">
-                <button class="word-count-btn" data-count="10"><span class="count">10</span><span class="label">クイック</span></button>
-                <button class="word-count-btn" data-count="30"><span class="count">30</span><span class="label">集中</span></button>
-                <button class="word-count-btn" data-count="50"><span class="count">50</span><span class="label">がっつり</span></button>
-                <button class="word-count-btn" data-count="100"><span class="count">100</span><span class="label">長時間</span></button>
+    try {
+        const container = document.getElementById('quiz-container');
+        if (!container) throw new Error('quiz-container not found');
+        container.innerHTML = `
+            <div class="home-screen">
+                <h2>単語学習をはじめよう</h2>
+                <div class="word-count-options">
+                    <button class="word-count-btn" data-count="10"><span class="count">10</span><span class="label">クイック</span></button>
+                    <button class="word-count-btn" data-count="30"><span class="count">30</span><span class="label">集中</span></button>
+                    <button class="word-count-btn" data-count="50"><span class="count">50</span><span class="label">がっつり</span></button>
+                    <button class="word-count-btn" data-count="100"><span class="count">100</span><span class="label">長時間</span></button>
+                </div>
+                <div class="word-count-options">
+                    <button class="word-count-btn" id="btn-flash">🪄 フラッシュカード</button>
+                    <button class="word-count-btn" id="btn-review-hub">📚 復習モード</button>
+                </div>
+                <div class="word-count-options">
+                    <button class="word-count-btn" id="btn-continue">⏩ 前回の続き</button>
+                </div>
+                <p class="total-words">総単語数: ${words.length}語 / スター: ${Object.keys(STARRED).length} / 過去ミス: ${MISSED_BANK.length}</p>
             </div>
-            <div class="word-count-options">
-                <button class="word-count-btn" id="btn-flash">🪄 フラッシュカード</button>
-                <button class="word-count-btn" id="btn-review-hub">📚 復習モード</button>
-            </div>
-            <div class="word-count-options">
-                <button class="word-count-btn" id="btn-continue">⏩ 前回の続き</button>
-            </div>
-            <p class="total-words">総単語数: ${words.length}語 / スター: ${Object.keys(STARRED).length} / 過去ミス: ${MISSED_BANK.length}</p>
-        </div>
-    `;
+        `;
+        setActiveNav('home');
 
-    // 単語数選択ボタンのイベントリスナーを設定
-    const buttons = document.querySelectorAll('.word-count-btn[data-count]');
-    buttons.forEach(button => {
-        button.addEventListener('click', () => {
-            selectedWordCount = parseInt(button.dataset.count);
-            startQuiz();
+        const buttons = document.querySelectorAll('.word-count-btn[data-count]');
+        buttons.forEach(button => {
+            button.addEventListener('click', () => {
+                selectedWordCount = parseInt(button.dataset.count);
+                startQuiz();
+            });
         });
-    });
 
-    document.getElementById('btn-review-hub')?.addEventListener('click', showReviewHub);
-    document.getElementById('btn-flash')?.addEventListener('click', () => startFlashcards());
-    document.getElementById('btn-continue')?.addEventListener('click', () => startQuiz());
+        document.getElementById('btn-review-hub')?.addEventListener('click', showReviewHub);
+        document.getElementById('btn-flash')?.addEventListener('click', () => startFlashcards());
+        document.getElementById('btn-continue')?.addEventListener('click', () => startQuiz());
+    } catch (error) {
+        reportError(error, 'ホーム画面の表示に失敗しました。');
+    }
 }
 
 // ======= 画面: クイズ =======
 function startQuiz() {
-    const container = document.getElementById('quiz-container');
-    container.innerHTML = `
-        <div class="word-display">
-            <p id="word"></p>
-        </div>
-        <div class="word-tools" id="word-tools"></div>
-        <div class="choices-container" id="choices">
-        </div>
-        <div class="result" id="result"></div>
-        <div class="progress">
-            <span id="score">スコア: 0</span>
-            <span id="question-count">問題: 0/0</span>
-        </div>
-    `;
-    
-    currentWordIndex = 0;
-    score = 0;
-    missedWords = [];
-    shuffleWords();
-    displayWord();
+    try {
+        const container = document.getElementById('quiz-container');
+        if (!container) throw new Error('quiz-container not found');
+        container.innerHTML = `
+            <div class="word-display">
+                <p id="word"></p>
+            </div>
+            <div class="word-tools" id="word-tools"></div>
+            <div class="choices-container" id="choices">
+            </div>
+            <div class="result" id="result"></div>
+            <div class="progress">
+                <span id="score">スコア: 0</span>
+                <span id="question-count">問題: 0/0</span>
+            </div>
+        `;
+
+        currentWordIndex = 0;
+        score = 0;
+        missedWords = [];
+        shuffleWords();
+        currentWordList = shuffledWords.slice();
+        setActiveNav('quiz');
+        displayWord();
+    } catch (error) {
+        reportError(error, '単語テストの開始に失敗しました。');
+    }
 }
 
 // ======= 画面: 復習ハブ =======
 function showReviewHub() {
-    const container = document.getElementById('quiz-container');
-    container.innerHTML = `
-        <div class="home-screen">
-            <h2>復習する項目を選択</h2>
-            <div class="word-count-options">
-                <button class="word-count-btn" id="btn-review-missed">❗ 過去のミス (${MISSED_BANK.length})</button>
-                <button class="word-count-btn" id="btn-review-star">★ スター (${Object.keys(STARRED).length})</button>
+    try {
+        const container = document.getElementById('quiz-container');
+        if (!container) throw new Error('quiz-container not found');
+        container.innerHTML = `
+            <div class="home-screen">
+                <h2>復習する項目を選択</h2>
+                <div class="word-count-options">
+                    <button class="word-count-btn" id="btn-review-missed">ミスの単語をテスト (${MISSED_BANK.length})</button>
+                    <button class="word-count-btn" id="btn-review-missed-flash">ミスの単語をカードで見る (${MISSED_BANK.length})</button>
+                </div>
+                <div class="word-count-options">
+                    <button class="word-count-btn" id="btn-review-star">スター単語をテスト (${Object.keys(STARRED).length})</button>
+                    <button class="word-count-btn" id="btn-review-star-flash">スター単語をカードで見る (${Object.keys(STARRED).length})</button>
+                </div>
+                <div class="word-count-options">
+                    <button class="word-count-btn" id="btn-clear-missed">過去のミスをクリア</button>
+                    <button class="word-count-btn" id="btn-back-home">ホームへ</button>
+                </div>
             </div>
-            <div class="word-count-options">
-                <button class="word-count-btn" id="btn-clear-missed">🧹 過去のミスをクリア</button>
-                <button class="word-count-btn" id="btn-back-home">🏠 ホームへ</button>
-            </div>
-        </div>
-    `;
-    document.getElementById('btn-review-missed')?.addEventListener('click', () => startQuizFromList(shuffleArray([...MISSED_BANK])));
-    document.getElementById('btn-review-star')?.addEventListener('click', () => {
-        const list = words.filter(w => STARRED[wordId(w)]);
-        if (list.length === 0) return alert('スターがありません');
-        startQuizFromList(shuffleArray(list));
-    });
-    document.getElementById('btn-clear-missed')?.addEventListener('click', () => {
-        if (!confirm('過去のミスをすべて削除しますか？')) return;
-        MISSED_BANK = [];
-        storage.set(MISSED_BANK_KEY, MISSED_BANK);
-        showReviewHub();
-    });
-    document.getElementById('btn-back-home')?.addEventListener('click', showHomeScreen);
+        `;
+        setActiveNav('review');
+
+        document.getElementById('btn-review-missed')?.addEventListener('click', () => {
+            if (!MISSED_BANK.length) return alert('過去のミスはありません');
+            startQuizFromList(shuffleArray([...MISSED_BANK]));
+        });
+        document.getElementById('btn-review-missed-flash')?.addEventListener('click', () => {
+            if (!MISSED_BANK.length) return alert('過去のミスはありません');
+            startFlashcards('missed');
+        });
+        document.getElementById('btn-review-star')?.addEventListener('click', () => {
+            const list = words.filter(w => STARRED[wordId(w)]);
+            if (list.length === 0) return alert('スターがありません');
+            startQuizFromList(list);
+        });
+        document.getElementById('btn-review-star-flash')?.addEventListener('click', () => {
+            const list = words.filter(w => STARRED[wordId(w)]);
+            if (list.length === 0) return alert('スターがありません');
+            startFlashcards('star');
+        });
+        document.getElementById('btn-clear-missed')?.addEventListener('click', () => {
+            if (!confirm('過去のミスをすべて削除しますか？')) return;
+            MISSED_BANK = [];
+            try { storage.set(MISSED_BANK_KEY, MISSED_BANK); } catch (error) { console.warn('Failed to clear missed bank', error); }
+            showReviewHub();
+        });
+        document.getElementById('btn-back-home')?.addEventListener('click', showHomeScreen);
+    } catch (error) {
+        reportError(error, '復習メニューの表示に失敗しました。');
+    }
 }
 
 function startQuizFromList(list) {
-    const container = document.getElementById('quiz-container');
-    container.innerHTML = `
-        <div class="word-display">
-            <p id="word"></p>
-        </div>
-        <div class="word-tools" id="word-tools"></div>
-        <div class="choices-container" id="choices"></div>
-        <div class="result" id="result"></div>
-        <div class="progress">
-            <span id="score">スコア: 0</span>
-            <span id="question-count">問題: 0/0</span>
-        </div>
-    `;
-    shuffledWords = list.slice();
-    selectedWordCount = list.length;
-    currentWordIndex = 0; score = 0; missedWords = [];
-    displayWord();
+    try {
+        const container = document.getElementById('quiz-container');
+        if (!container) throw new Error('quiz-container not found');
+        container.innerHTML = `
+            <div class="word-display">
+                <p id="word"></p>
+            </div>
+            <div class="word-tools" id="word-tools"></div>
+            <div class="choices-container" id="choices"></div>
+            <div class="result" id="result"></div>
+            <div class="progress">
+                <span id="score">スコア: 0</span>
+                <span id="question-count">問題: 0/0</span>
+            </div>
+        `;
+        const dataset = list.slice();
+        currentWordList = dataset.slice();
+        shuffledWords = shuffleArray(dataset);
+        selectedWordCount = dataset.length;
+        currentWordIndex = 0; score = 0; missedWords = [];
+        setActiveNav('quiz');
+        displayWord();
+    } catch (error) {
+        reportError(error, '復習テストの開始に失敗しました。');
+    }
 }
 
 // ======= 画面: フラッシュカード =======
 let flashIndex = 0, flashList = [];
 let flashRevealed = false;
-function startFlashcards(source='all') {
-    flashList = source === 'star' ? words.filter(w => STARRED[wordId(w)])
-               : source === 'missed' ? [...MISSED_BANK]
-               : shuffleArray([...words]).slice(0, selectedWordCount || 30);
-    flashIndex = 0; flashRevealed = false;
-    const container = document.getElementById('quiz-container');
-    container.innerHTML = `
-        <div class="word-display">
-            <p id="word"></p>
-        </div>
-        <div class="word-tools" id="word-tools"></div>
-        <div class="choices-container" id="flash-area"></div>
-        <div class="progress">
-            <span id="score">カード: 0</span>
-            <span id="question-count">0/0</span>
-        </div>
-    `;
-    renderFlash();
+function startFlashcards(options = {}) {
+    try {
+        let source = 'all';
+        let list = null;
+        let shouldShuffle = true;
+
+        if (typeof options === 'string') {
+            source = options;
+        } else {
+            source = options.source ?? 'all';
+            list = options.list ?? null;
+            if (typeof options.shuffle === 'boolean') shouldShuffle = options.shuffle;
+        }
+
+        if (list && list.length) {
+            flashList = list.slice();
+        } else if (source === 'star') {
+            flashList = words.filter(w => STARRED[wordId(w)]);
+        } else if (source === 'missed') {
+            flashList = [...MISSED_BANK];
+        } else {
+            const base = shuffleArray([...words]);
+            const count = selectedWordCount > 0 ? selectedWordCount : 30;
+            flashList = base.slice(0, count);
+        }
+
+        if (!flashList.length) {
+            alert('表示できるフラッシュカードがありません');
+            return;
+        }
+
+        if (shouldShuffle) {
+            flashList = shuffleArray(flashList);
+        }
+
+        currentWordList = flashList.slice();
+        selectedWordCount = flashList.length;
+        flashIndex = 0;
+        flashRevealed = false;
+
+        const container = document.getElementById('quiz-container');
+        if (!container) throw new Error('quiz-container not found');
+        container.innerHTML = `
+            <div class="word-display">
+                <p id="word"></p>
+            </div>
+            <div class="word-tools" id="word-tools"></div>
+            <div class="choices-container" id="flash-area"></div>
+            <div class="progress">
+                <span id="score">カード: 0</span>
+                <span id="question-count">0/0</span>
+            </div>
+        `;
+        setActiveNav('flashcards');
+        renderFlash();
+    } catch (error) {
+        reportError(error, 'フラッシュカードの表示に失敗しました。');
+    }
 }
 
 function renderFlash(){
-    if (flashIndex >= flashList.length) { showHomeScreen(); return; }
-    const w = flashList[flashIndex];
-    document.getElementById('word').textContent = w.word;
-    const tools = document.getElementById('word-tools');
-    tools.innerHTML = '';
-    const homeBtn = document.createElement('button');
-    homeBtn.className = 'tool-btn';
-    homeBtn.textContent = '🏠 ホーム';
-    homeBtn.onclick = showHomeScreen;
-    const starBtn = document.createElement('button');
-    starBtn.className = 'tool-btn';
-    const id = wordId(w);
-    if (STARRED[id]) starBtn.classList.add('is-starred');
-    starBtn.textContent = STARRED[id] ? '★ スター済' : '☆ スター';
-    starBtn.onclick = () => { STARRED[id] = !STARRED[id]; storage.set(STAR_KEY, STARRED); renderFlash(); };
-    tools.append(homeBtn, starBtn);
+    try {
+        if (flashIndex >= flashList.length) { showHomeScreen(); return; }
+        const w = flashList[flashIndex];
+        if (!w) throw new Error('flashcard data missing');
+        const wordLabel = document.getElementById('word');
+        if (!wordLabel) throw new Error('word label not found');
+        wordLabel.textContent = w.word;
+        const tools = document.getElementById('word-tools');
+        if (!tools) throw new Error('tool container not found');
+        tools.innerHTML = '';
+        const id = wordId(w);
+        const homeBtn = createToolButton('ホームに戻る', showHomeScreen);
+        const quizBtn = createToolButton('このセットでテスト', () => startQuizFromList(flashList.slice()));
+        const starBtn = createToolButton(STARRED[id] ? 'スター済' : 'スター登録', () => {
+            if (STARRED[id]) {
+                delete STARRED[id];
+            } else {
+                STARRED[id] = true;
+            }
+            try { storage.set(STAR_KEY, STARRED); } catch (error) { console.warn('スター情報の保存に失敗しました', error); }
+            renderFlash();
+        });
+        if (STARRED[id]) starBtn.classList.add('is-starred');
+        tools.append(homeBtn, quizBtn, starBtn);
 
-    const area = document.getElementById('flash-area');
-    area.innerHTML = '';
-    const reveal = document.createElement('button'); reveal.className = 'retry-btn'; reveal.textContent = flashRevealed ? w.meaning : '意味を表示';
-    reveal.onclick = () => { flashRevealed = true; renderFlash(); };
-    area.appendChild(reveal);
+        const area = document.getElementById('flash-area');
+        if (!area) throw new Error('flash area not found');
+        area.innerHTML = '';
+        const reveal = document.createElement('button'); reveal.className = 'retry-btn'; reveal.textContent = flashRevealed ? w.meaning : '意味を表示';
+        reveal.onclick = () => { flashRevealed = true; renderFlash(); };
+        area.appendChild(reveal);
 
-    if (flashRevealed) {
-        const row = document.createElement('div');
-        row.style.display = 'grid'; row.style.gridTemplateColumns = '1fr 1fr'; row.style.gap='0.6rem'; row.style.marginTop='0.6rem';
-        const btnAgain = document.createElement('button'); btnAgain.className = 'retry-btn'; btnAgain.textContent = 'まだ';
-        btnAgain.onclick = () => { MISSED_BANK.push(w); storage.set(MISSED_BANK_KEY, MISSED_BANK.slice(-500)); flashIndex++; flashRevealed=false; renderFlash(); };
-        const btnGood = document.createElement('button'); btnGood.className = 'retry-btn'; btnGood.textContent = '覚えた';
-        btnGood.onclick = () => { flashIndex++; flashRevealed=false; renderFlash(); };
-        row.append(btnAgain, btnGood); area.appendChild(row);
+        if (flashRevealed) {
+            const row = document.createElement('div');
+            row.style.display = 'grid'; row.style.gridTemplateColumns = '1fr 1fr'; row.style.gap='0.6rem'; row.style.marginTop='0.6rem';
+            const btnAgain = document.createElement('button'); btnAgain.className = 'retry-btn'; btnAgain.textContent = 'まだ';
+            btnAgain.onclick = () => { MISSED_BANK.push(w); try { storage.set(MISSED_BANK_KEY, MISSED_BANK.slice(-500)); } catch (error) { console.warn('Failed to save missed bank from flashcards', error); } flashIndex++; flashRevealed=false; renderFlash(); };
+            const btnGood = document.createElement('button'); btnGood.className = 'retry-btn'; btnGood.textContent = '覚えた';
+            btnGood.onclick = () => { flashIndex++; flashRevealed=false; renderFlash(); };
+            row.append(btnAgain, btnGood); area.appendChild(row);
+        }
+        const countLabel = document.getElementById('question-count');
+        if (countLabel) countLabel.textContent = `${flashIndex+1}/${flashList.length}`;
+        const scoreLabel = document.getElementById('score');
+        if (scoreLabel) scoreLabel.textContent = `カード: ${flashIndex}`;
+    } catch (error) {
+        reportError(error, 'フラッシュカードの更新に失敗しました。');
     }
-    document.getElementById('question-count').textContent = `${flashIndex+1}/${flashList.length}`;
-    document.getElementById('score').textContent = `カード: ${flashIndex}`;
 }
 
 // ============ 設定UIと初期化 ============
 function wireHeader() {
-    document.getElementById('btn-home')?.addEventListener('click', showHomeScreen);
-    document.getElementById('btn-settings')?.addEventListener('click', openSettings);
-    const audioBtn = document.getElementById('btn-audio');
-    if (audioBtn) audioBtn.setAttribute('aria-pressed', SETTINGS.sound ? 'true' : 'false');
-    audioBtn?.addEventListener('click', () => {
-        SETTINGS.sound = !SETTINGS.sound; storage.set(SETTINGS_KEY, SETTINGS);
-        audioBtn.setAttribute('aria-pressed', SETTINGS.sound ? 'true' : 'false');
+    document.getElementById('nav-home')?.addEventListener('click', () => {
+        showHomeScreen();
     });
-    document.getElementById('btn-review')?.addEventListener('click', showReviewHub);
-}
 
-function openSettings(){
-    const modal = document.getElementById('settings-modal');
-    const closeBtns = modal.querySelectorAll('[data-close]');
-    const timeRange = document.getElementById('range-time');
-    const timePrev = document.getElementById('time-preview');
-    const chkSound = document.getElementById('chk-sound');
-    const rangeGoal = document.getElementById('range-goal');
-    const goalPrev = document.getElementById('goal-preview');
+    const quizNav = document.querySelector('.header-link[data-nav="quiz"]');
+    quizNav?.addEventListener('click', () => {
+        if (currentWordList.length) {
+            startQuizFromList(currentWordList.slice());
+            return;
+        }
+        if (!selectedWordCount) selectedWordCount = 30;
+        startQuiz();
+    });
 
-    timeRange.value = SETTINGS.timePerQuestion;
-    timePrev.textContent = `${(SETTINGS.timePerQuestion/1000).toFixed(1)}s`;
-    chkSound.checked = SETTINGS.sound;
-    rangeGoal.value = STATS.dailyGoal || DEFAULT_SETTINGS.dailyGoal;
-    goalPrev.textContent = rangeGoal.value;
+    const flashNav = document.querySelector('.header-link[data-nav="flashcards"]');
+    flashNav?.addEventListener('click', () => {
+        if (currentWordList.length) {
+            startFlashcards({ list: currentWordList.slice(), source: 'current', shuffle: false });
+        } else {
+            startFlashcards({});
+        }
+    });
 
-    timeRange.oninput = () => timePrev.textContent = `${(timeRange.value/1000).toFixed(1)}s`;
-    rangeGoal.oninput = () => goalPrev.textContent = rangeGoal.value;
-
-    modal.setAttribute('aria-hidden','false');
-    closeBtns.forEach(b => b.addEventListener('click', () => modal.setAttribute('aria-hidden','true')));
-    document.getElementById('btn-save-settings').onclick = () => {
-        SETTINGS.timePerQuestion = parseInt(timeRange.value,10);
-        SETTINGS.sound = chkSound.checked;
-        STATS.dailyGoal = parseInt(rangeGoal.value,10);
-        storage.set(SETTINGS_KEY, SETTINGS);
-        storage.set(STATS_KEY, STATS);
-        applyTheme(); updateStatsBar();
-        modal.setAttribute('aria-hidden','true');
-    };
+    const reviewNav = document.querySelector('.header-link[data-nav="review"]');
+    reviewNav?.addEventListener('click', () => showReviewHub());
 }
 
 // 初期化
 window.onload = () => {
     applyTheme();
     wireHeader();
-    updateStatsBar();
     showHomeScreen();
 };

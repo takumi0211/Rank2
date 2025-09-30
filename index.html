@@ -9,58 +9,19 @@
 <body>
     <div class="container">
         <header class="app-header">
-            <div class="brand">
-                <span class="logo">🧠</span>
-                <span class="title">Elegant Word Quiz</span>
-            </div>
-            <div class="header-actions">
-                <button id="btn-home" class="icon-btn" title="ホームへ">🏠</button>
-                <button id="btn-review" class="icon-btn" title="復習へ">📚</button>
-                <button id="btn-audio" class="icon-btn" title="音声オン/オフ" aria-pressed="false">🔈</button>
-                <button id="btn-settings" class="icon-btn" title="設定">⚙️</button>
-            </div>
+            <button type="button" class="app-title" id="nav-home">Elegant Word Quiz</button>
+            <nav class="header-links" aria-label="アプリナビゲーション">
+                <button type="button" class="header-link" data-nav="quiz">単語テスト</button>
+                <button type="button" class="header-link" data-nav="flashcards">フラッシュカード</button>
+                <button type="button" class="header-link" data-nav="review">復習モード</button>
+            </nav>
         </header>
-
-        <div class="stats-bar" id="stats-bar">
-            <div class="stat" id="stat-streak">🔥 0</div>
-            <div class="stat" id="stat-goal">🎯 0/30</div>
-            <div class="stat" id="stat-acc">✅ 0%</div>
-        </div>
 
         <div class="quiz-container" id="quiz-container"></div>
 
         <footer class="app-footer">
             <div class="mobile-note">リラックスして学習を続けましょう</div>
         </footer>
-    </div>
-
-    <!-- Settings Modal -->
-    <div class="modal" id="settings-modal" aria-hidden="true">
-        <div class="modal-backdrop" data-close></div>
-        <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-            <div class="modal-header">
-                <h3 id="settings-title">設定</h3>
-                <button class="icon-btn" data-close title="閉じる">✖️</button>
-            </div>
-            <div class="modal-body">
-                <div class="setting-item">
-                    <label for="range-time">制限時間/問</label>
-                    <input type="range" id="range-time" min="3000" max="15000" step="500">
-                    <span id="time-preview">5.0s</span>
-                </div>
-                <div class="setting-item">
-                    <label class="toggle"><input type="checkbox" id="chk-sound"> 効果音</label>
-                </div>
-                <div class="setting-item">
-                    <label for="range-goal">デイリー目標</label>
-                    <input type="range" id="range-goal" min="10" max="100" step="10">
-                    <span id="goal-preview">30</span>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="primary-btn" id="btn-save-settings">保存</button>
-            </div>
-        </div>
     </div>
     <script src="script.js"></script>
 </body>
