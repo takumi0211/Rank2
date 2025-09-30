@@ -16,7 +16,7 @@ body {
 
 .container {
     width: 100%;
-    max-width: 600px;
+    max-width: 720px;
     padding: 0.5rem;
 }
 
@@ -511,3 +511,92 @@ body {
         font-size: 1.5rem;
     }
 } 
+
+/* ===================== */
+/* New UI Enhancements   */
+/* ===================== */
+
+:root {
+  --bg: #f5fbf6;
+  --card: #ffffff;
+  --text: #2c3e50;
+  --muted: #7f8c8d;
+  --primary: #3498db;
+  --success: #27ae60;
+  --danger: #e74c3c;
+  --warning: #f1c40f;
+  --border: #e9ecef;
+}
+
+[data-theme="dark"] {
+  --bg: #0f1418;
+  --card: #151b20;
+  --text: #e6edf3;
+  --muted: #9aa7b0;
+  --primary: #6aa9ff;
+  --success: #4fd866;
+  --danger: #ff6b6b;
+  --warning: #ffd166;
+  --border: #27323a;
+}
+
+body { background: linear-gradient(135deg, var(--bg) 0%, #c8e6c900 100%); }
+.quiz-container { background: var(--card); }
+h1, .word-display p, .result-summary, .missed-words h3 { color: var(--text); }
+.choice-btn, .retry-btn, .word-count-btn, .missed-word-item { border-color: var(--border); }
+.choice-btn { background: #f8f9fa; color: var(--text); }
+
+.app-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.5rem; padding: 0.2rem 0.4rem;
+}
+.brand { display: flex; gap: 0.5rem; align-items: center; color: var(--text); }
+.brand .title { font-size: 1.1rem; font-weight: 600; }
+.header-actions { display: flex; gap: 0.25rem; }
+.icon-btn {
+  background: transparent; border: 1px solid transparent; color: var(--text);
+  padding: 0.35rem 0.5rem; border-radius: 8px; cursor: pointer; font-size: 1rem;
+}
+.icon-btn:hover { background: rgba(0,0,0,0.06); }
+[data-theme="dark"] .icon-btn:hover { background: rgba(255,255,255,0.06); }
+
+.stats-bar { display: flex; gap: 0.5rem; margin: 0.4rem 0 0.6rem; }
+.stat { flex: 1; padding: 0.4rem; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); text-align: center; font-size: 0.9rem; }
+
+.app-footer { margin-top: 0.5rem; color: var(--muted); text-align: center; font-size: 0.85rem; }
+.kbd-hints { opacity: 0.8; }
+
+.word-tools { display: flex; justify-content: center; gap: 0.4rem; margin-top: 0.2rem; }
+.tool-btn { border: 1px solid var(--border); background: #f8f9fa; color: var(--text); padding: 0.35rem 0.6rem; border-radius: 10px; cursor: pointer; }
+.tool-btn.is-starred { background: #ffeaa7; border-color: #ffd166; }
+
+/* Modal */
+.modal { position: fixed; inset: 0; display: none; }
+.modal[aria-hidden="false"] { display: block; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.35); }
+.modal-panel {
+  position: absolute; inset: 0; margin: auto; width: min(560px, 94vw);
+  background: var(--card); color: var(--text); border: 1px solid var(--border);
+  border-radius: 12px; padding: 0.8rem; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; }
+.modal-body { display: grid; gap: 0.8rem; }
+.setting-item { display: flex; align-items: center; gap: 0.6rem; justify-content: space-between; }
+.setting-item label { color: var(--text); }
+.toggle input { transform: scale(1.1); }
+.primary-btn {
+  width: 100%; padding: 0.8rem; border-radius: 10px; border: none; cursor: pointer;
+  background: var(--primary); color: white; font-size: 1rem;
+}
+
+/* Timer overrides to use theme vars */
+.timer-bar-container { background-color: var(--border); }
+.timer-bar { background-color: var(--primary); }
+.timer-bar.warning { background-color: var(--warning); }
+.timer-bar.danger { background-color: var(--danger); }
+
+@media (max-width: 480px) {
+  .brand .title { display: none; }
+  .stats-bar { gap: 0.35rem; }
+  .stat { font-size: 0.8rem; padding: 0.35rem; }
+}
