@@ -17,8 +17,8 @@ body {
 
 .container {
     width: 100%;
-    max-width: 720px;
-    padding: clamp(0.75rem, 3vw, 1.5rem);
+    max-width: 520px;
+    padding: clamp(0.75rem, 4vw, 1.6rem);
     margin: 0 auto;
 }
 
@@ -32,9 +32,9 @@ h1 {
 
 .quiz-container {
     background: white;
-    padding: 0.8rem;
-    border-radius: 15px;
-    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    padding: clamp(1rem, 4vw, 1.6rem);
+    border-radius: 18px;
+    box-shadow: 0 14px 30px rgba(0,0,0,0.12);
 }
 
 .word-display {
@@ -58,28 +58,28 @@ h1 {
 
 .choice-btn {
     width: 100%;
-    padding: 0.9rem 1rem;
+    padding: 1rem 1.1rem;
     background: #f8f9fa;
     border: 2px solid #e9ecef;
-    border-radius: 10px;
-    font-size: 1.1rem;
+    border-radius: 14px;
+    font-size: 1.15rem;
     cursor: pointer;
-    transition: all 0.2s ease;
-    text-align: left;
+    transition: transform 0.15s ease, background 0.2s ease;
+    text-align: center;
     color: #2c3e50;
-    min-height: 52px;
+    min-height: 56px;
     -webkit-appearance: none;
     display: flex;
     align-items: center;
-    justify-content: flex-start;
-    gap: 0.5rem;
+    justify-content: center;
+    gap: 0.4rem;
     white-space: normal;
     overflow-wrap: anywhere;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.04);
 }
 
-.choice-btn:hover {
-    background: #e9ecef;
-    transform: translateY(-2px);
+.choice-btn:active {
+    transform: scale(0.98);
 }
 
 .choice-btn.correct {
@@ -129,7 +129,7 @@ h1 {
 
 .word-count-options {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 0.8rem;
     margin-bottom: 1.5rem;
     padding: 0 0.5rem;
@@ -197,11 +197,16 @@ h1 {
     }
 
     .word-count-btn {
-        padding: 0.8rem 0.5rem;
+        padding: 0.9rem 0.5rem;
     }
 
     .word-count-btn .count {
         font-size: 1.2rem;
+    }
+
+    .word-count-options {
+        grid-template-columns: 1fr;
+        padding: 0;
     }
 }
 
@@ -394,9 +399,9 @@ body {
 
 .quiz-container {
     background: white;
-    padding: clamp(1rem, 3vw, 1.5rem);
-    border-radius: 15px;
-    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    padding: clamp(1rem, 4vw, 1.6rem);
+    border-radius: 18px;
+    box-shadow: 0 14px 30px rgba(0,0,0,0.12);
 }
 
 .word-display {
@@ -576,26 +581,26 @@ h1, .word-display p, .result-summary, .missed-words h3 { color: var(--text); }
 
 .app-header {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 0.5rem; padding: 0.2rem 0.4rem;
+  margin-bottom: 0.75rem; padding: 0.2rem 0.4rem;
 }
 .brand { display: flex; gap: 0.5rem; align-items: center; color: var(--text); }
-.brand .title { font-size: 1.1rem; font-weight: 600; }
+.brand .title { font-size: 1.2rem; font-weight: 600; }
 .header-actions { display: flex; gap: 0.25rem; }
 .icon-btn {
-  background: transparent; border: 1px solid transparent; color: var(--text);
-  padding: 0.35rem 0.5rem; border-radius: 8px; cursor: pointer; font-size: 1rem;
+  background: rgba(255,255,255,0.7); border: 1px solid var(--border); color: var(--text);
+  padding: 0.4rem 0.55rem; border-radius: 10px; cursor: pointer; font-size: 1.05rem;
 }
-.icon-btn:hover { background: rgba(0,0,0,0.06); }
+[data-theme="dark"] .icon-btn { background: rgba(255,255,255,0.08); }
 [data-theme="dark"] .icon-btn:hover { background: rgba(255,255,255,0.06); }
 
 .stats-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.4rem 0 0.6rem; }
 .stat { flex: 1 1 0%; padding: 0.45rem; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); text-align: center; font-size: 0.9rem; min-width: 140px; }
 
-.app-footer { margin-top: 0.5rem; color: var(--muted); text-align: center; font-size: 0.85rem; }
-.kbd-hints { opacity: 0.8; }
+.app-footer { margin-top: 0.75rem; color: var(--muted); text-align: center; font-size: 0.85rem; }
+.mobile-note { opacity: 0.75; letter-spacing: 0.02em; }
 
-.word-tools { display: flex; justify-content: center; gap: 0.4rem; margin-top: 0.2rem; flex-wrap: wrap; }
-.tool-btn { border: 1px solid var(--border); background: #f8f9fa; color: var(--text); padding: 0.35rem 0.6rem; border-radius: 10px; cursor: pointer; }
+.word-tools { display: flex; justify-content: center; gap: 0.6rem; margin-top: 0.4rem; flex-wrap: wrap; }
+.tool-btn { border: 1px solid var(--border); background: #f8f9fa; color: var(--text); padding: 0.55rem 0.9rem; border-radius: 12px; cursor: pointer; font-size: 0.95rem; }
 .tool-btn.is-starred { background: #ffeaa7; border-color: #ffd166; }
 
 /* Modal */

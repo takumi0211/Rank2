@@ -288,9 +288,7 @@ const STAR_KEY = 'eq_star_v1';
 const DEFAULT_SETTINGS = {
     timePerQuestion: 5000,
     sound: true,
-    tts: false,
-    keyboard: true,
-    theme: 'system', // 'system' | 'light' | 'dark'
+    theme: 'light',
     dailyGoal: 30,
 };
 
@@ -301,7 +299,9 @@ const storage = {
     set(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
 };
 
-let SETTINGS = storage.get(SETTINGS_KEY, DEFAULT_SETTINGS);
+let SETTINGS = { ...DEFAULT_SETTINGS, ...storage.get(SETTINGS_KEY, {}) };
+SETTINGS.theme = 'light';
+try { storage.set(SETTINGS_KEY, SETTINGS); } catch {}
 let STATS = storage.get(STATS_KEY, {
     streak: 0,
     lastActive: null,
@@ -345,12 +345,8 @@ function shuffleWords() {
     }
 }
 
-function applyTheme(theme) {
-    const root = document.documentElement;
-    const t = theme || SETTINGS.theme || 'system';
-    if (t === 'light') root.setAttribute('data-theme', 'light');
-    else if (t === 'dark') root.setAttribute('data-theme', 'dark');
-    else root.removeAttribute('data-theme');
+function applyTheme() {
+    document.documentElement.setAttribute('data-theme', 'light');
 }
 
 function ensureDaily() {
@@ -379,17 +375,6 @@ function updateStatsBar() {
     if (accEl) accEl.textContent = `✅ ${acc}%`;
 }
 
-function speak(text) {
-    try {
-        if (!SETTINGS.tts) return;
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'en-US';
-        u.rate = 0.95; u.pitch = 1.0; u.volume = 1.0;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(u);
-    } catch {}
-}
-
 function vibrate(ms=20){ try{ if (navigator.vibrate) navigator.vibrate(ms); }catch{} }
 
 let audioCtx = null;
@@ -414,15 +399,14 @@ function displayWord() {
         `問題: ${currentWordIndex + 1}/${shuffledWords.length}`;
     document.getElementById('score').textContent = `スコア: ${score}`;
     
-    // ツール群（音声・スター）更新
+    // ツール群（ホーム・スター）更新
     const tools = document.getElementById('word-tools');
     if (tools) {
         tools.innerHTML = '';
-        const speakBtn = document.createElement('button');
-        speakBtn.className = 'tool-btn';
-        speakBtn.id = 'btn-speak';
-        speakBtn.textContent = '🔊 発音';
-        speakBtn.addEventListener('click', () => speak(currentWord.word));
+        const homeBtn = document.createElement('button');
+        homeBtn.className = 'tool-btn';
+        homeBtn.textContent = '🏠 ホーム';
+        homeBtn.addEventListener('click', showHomeScreen);
         const starBtn = document.createElement('button');
         starBtn.className = 'tool-btn';
         starBtn.id = 'btn-star';
@@ -436,8 +420,7 @@ function displayWord() {
             storage.set(STAR_KEY, STARRED);
             displayWord();
         });
-        tools.appendChild(speakBtn);
-        tools.appendChild(starBtn);
+        tools.append(homeBtn, starBtn);
     }
     
     // 既存のタイムバーを削除
@@ -469,13 +452,12 @@ function displayWord() {
     document.getElementById('result').textContent = '';
     
     startTimer();
-    if (SETTINGS.tts) speak(currentWord.word);
 }
 
 function showResults() {
     const container = document.querySelector('.quiz-container');
     const accuracy = Math.round((score / shuffledWords.length) * 100);
-    
+
     // 一旦HTMLを更新
     container.innerHTML = `
         <h2>テスト結果</h2>
@@ -504,6 +486,7 @@ function showResults() {
         `}
         <button id="retry-all" class="retry-btn">最初からやり直す</button>
         <button id="go-review" class="retry-btn">復習モードへ</button>
+        <button id="results-home" class="retry-btn">ホームへ戻る</button>
     `;
 
     // HTMLの更新後にイベントリスナーを設定
@@ -543,6 +526,8 @@ function showResults() {
     if (goReviewBtn) {
         goReviewBtn.addEventListener('click', () => showReviewHub());
     }
+
+    document.getElementById('results-home')?.addEventListener('click', showHomeScreen);
 }
 
 function checkAnswer(selectedAnswer, selectedButton) {
@@ -799,16 +784,17 @@ function renderFlash(){
     document.getElementById('word').textContent = w.word;
     const tools = document.getElementById('word-tools');
     tools.innerHTML = '';
-    const speakBtn = document.createElement('button');
-    speakBtn.className = 'tool-btn'; speakBtn.textContent = '🔊 発音';
-    speakBtn.onclick = () => speak(w.word);
+    const homeBtn = document.createElement('button');
+    homeBtn.className = 'tool-btn';
+    homeBtn.textContent = '🏠 ホーム';
+    homeBtn.onclick = showHomeScreen;
     const starBtn = document.createElement('button');
     starBtn.className = 'tool-btn';
     const id = wordId(w);
     if (STARRED[id]) starBtn.classList.add('is-starred');
     starBtn.textContent = STARRED[id] ? '★ スター済' : '☆ スター';
     starBtn.onclick = () => { STARRED[id] = !STARRED[id]; storage.set(STAR_KEY, STARRED); renderFlash(); };
-    tools.append(speakBtn, starBtn);
+    tools.append(homeBtn, starBtn);
 
     const area = document.getElementById('flash-area');
     area.innerHTML = '';
@@ -831,11 +817,8 @@ function renderFlash(){
 
 // ============ 設定UIと初期化 ============
 function wireHeader() {
+    document.getElementById('btn-home')?.addEventListener('click', showHomeScreen);
     document.getElementById('btn-settings')?.addEventListener('click', openSettings);
-    document.getElementById('btn-theme')?.addEventListener('click', () => {
-        const next = (SETTINGS.theme === 'light') ? 'dark' : (SETTINGS.theme === 'dark') ? 'system' : 'light';
-        SETTINGS.theme = next; storage.set(SETTINGS_KEY, SETTINGS); applyTheme();
-    });
     const audioBtn = document.getElementById('btn-audio');
     if (audioBtn) audioBtn.setAttribute('aria-pressed', SETTINGS.sound ? 'true' : 'false');
     audioBtn?.addEventListener('click', () => {
@@ -851,18 +834,12 @@ function openSettings(){
     const timeRange = document.getElementById('range-time');
     const timePrev = document.getElementById('time-preview');
     const chkSound = document.getElementById('chk-sound');
-    const chkTts = document.getElementById('chk-tts');
-    const chkKb = document.getElementById('chk-keyboard');
-    const selTheme = document.getElementById('sel-theme');
     const rangeGoal = document.getElementById('range-goal');
     const goalPrev = document.getElementById('goal-preview');
 
     timeRange.value = SETTINGS.timePerQuestion;
     timePrev.textContent = `${(SETTINGS.timePerQuestion/1000).toFixed(1)}s`;
     chkSound.checked = SETTINGS.sound;
-    chkTts.checked = SETTINGS.tts;
-    chkKb.checked = SETTINGS.keyboard;
-    selTheme.value = SETTINGS.theme || 'system';
     rangeGoal.value = STATS.dailyGoal || DEFAULT_SETTINGS.dailyGoal;
     goalPrev.textContent = rangeGoal.value;
 
@@ -874,9 +851,6 @@ function openSettings(){
     document.getElementById('btn-save-settings').onclick = () => {
         SETTINGS.timePerQuestion = parseInt(timeRange.value,10);
         SETTINGS.sound = chkSound.checked;
-        SETTINGS.tts = chkTts.checked;
-        SETTINGS.keyboard = chkKb.checked;
-        SETTINGS.theme = selTheme.value;
         STATS.dailyGoal = parseInt(rangeGoal.value,10);
         storage.set(SETTINGS_KEY, SETTINGS);
         storage.set(STATS_KEY, STATS);
@@ -885,32 +859,10 @@ function openSettings(){
     };
 }
 
-function wireKeyboard(){
-    window.addEventListener('keydown', (e) => {
-        if (!SETTINGS.keyboard) return;
-        const map = { '1':0,'2':1,'3':2,'4':3 };
-        if (map[e.key] !== undefined) {
-            const idx = map[e.key];
-            const btns = document.querySelectorAll('.choice-btn');
-            if (btns[idx] && !btns[idx].disabled) btns[idx].click();
-        }
-        if (e.key.toLowerCase() === 'h') document.getElementById('btn-speak')?.click();
-        if (e.key.toLowerCase() === 's') document.getElementById('btn-star')?.click();
-        if (e.key.toLowerCase() === 'n') {
-            const res = document.getElementById('result');
-            if (res && res.textContent) { /* allow quick next after feedback */ }
-        }
-        if (e.key === 'Escape') document.getElementById('btn-settings')?.click();
-        if (e.key === '+') { SETTINGS.timePerQuestion = Math.min(15000, (SETTINGS.timePerQuestion+500)); storage.set(SETTINGS_KEY, SETTINGS); }
-        if (e.key === '-') { SETTINGS.timePerQuestion = Math.max(3000, (SETTINGS.timePerQuestion-500)); storage.set(SETTINGS_KEY, SETTINGS); }
-    });
-}
-
 // 初期化
 window.onload = () => {
     applyTheme();
     wireHeader();
-    wireKeyboard();
     updateStatsBar();
     showHomeScreen();
 };

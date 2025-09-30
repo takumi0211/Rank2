@@ -14,9 +14,9 @@
                 <span class="title">Elegant Word Quiz</span>
             </div>
             <div class="header-actions">
+                <button id="btn-home" class="icon-btn" title="ホームへ">🏠</button>
                 <button id="btn-review" class="icon-btn" title="復習へ">📚</button>
                 <button id="btn-audio" class="icon-btn" title="音声オン/オフ" aria-pressed="false">🔈</button>
-                <button id="btn-theme" class="icon-btn" title="ライト/ダーク切替">🌓</button>
                 <button id="btn-settings" class="icon-btn" title="設定">⚙️</button>
             </div>
         </header>
@@ -30,7 +30,7 @@
         <div class="quiz-container" id="quiz-container"></div>
 
         <footer class="app-footer">
-            <div class="kbd-hints">1-4: 選択 / H: 音声 / S: ☆ / N: 次へ / Esc: 設定</div>
+            <div class="mobile-note">リラックスして学習を続けましょう</div>
         </footer>
     </div>
 
@@ -50,20 +50,6 @@
                 </div>
                 <div class="setting-item">
                     <label class="toggle"><input type="checkbox" id="chk-sound"> 効果音</label>
-                </div>
-                <div class="setting-item">
-                    <label class="toggle"><input type="checkbox" id="chk-tts"> 単語の発音</label>
-                </div>
-                <div class="setting-item">
-                    <label class="toggle"><input type="checkbox" id="chk-keyboard"> キーボード操作</label>
-                </div>
-                <div class="setting-item">
-                    <label for="sel-theme">テーマ</label>
-                    <select id="sel-theme">
-                        <option value="system">システム</option>
-                        <option value="light">ライト</option>
-                        <option value="dark">ダーク</option>
-                    </select>
                 </div>
                 <div class="setting-item">
                     <label for="range-goal">デイリー目標</label>
